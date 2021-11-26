@@ -1,0 +1,17 @@
+function = "sender <or> receiver"
+
+[sender]
+  workspace_path = "Path to your IntelliJ workspace"
+  [sender.socket]
+    host = "localhost"
+    port = 4401
+    password = "somePassword"
+
+[receiver]
+  copy_to_paths = [
+    "/home/server-1/plugins",
+    "/home/server-2/plugins"
+  ]
+  [receiver.socket]
+    port = 4401
+    password = "somePassword"

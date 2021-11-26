@@ -1,0 +1,4 @@
+revert-to-includes = false
+excludes = [
+  "ANonMinecraftProject"
+]
