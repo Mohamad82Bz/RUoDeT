@@ -2,12 +2,8 @@ package me.Mohamad82.RUoDeT.client;
 
 import me.Mohamad82.RUoDeT.Main;
 import me.Mohamad82.RUoDeT.utils.FileInfo;
-import me.Mohamad82.RUoDeT.utils.ResourceUtils;
 import org.apache.commons.io.IOUtils;
 
-import javax.sound.sampled.AudioInputStream;
-import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.Clip;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
@@ -59,6 +55,29 @@ public class ClientService {
                     }
 
                     File targetFolder = new File(projectFolder, "target");
+                    File buildFolder = new File(projectFolder, "build");
+                    if (buildFolder.exists()) {
+                        File libsFolder = new File(buildFolder, "libs");
+                        if (libsFolder.exists()) {
+                            for (File jarFile : libsFolder.listFiles()) {
+                                if (jarFile.isDirectory()) continue;
+                                if (!jarFile.getName().endsWith(".jar")) continue;
+                                boolean shouldBeSent = false;
+                                if (fileInfo.containsKey(jarFile)) {
+                                    FileInfo fileInfo = this.fileInfo.get(jarFile);
+                                    if (fileInfo.getLastModified() != jarFile.lastModified() || fileInfo.getLenght() != jarFile.length()) {
+                                        if (jarFile.length() > 1000)
+                                            shouldBeSent = true;
+                                    }
+                                } else {
+                                    shouldBeSent = true;
+                                }
+                                if (shouldBeSent) {
+                                    send(jarFile, firstLoop, true, executorService, fileInfo, host, port, password);
+                                }
+                            }
+                        }
+                    }
                     if (targetFolder.exists()) {
                         for (File jarFile : targetFolder.listFiles()) {
                             if (jarFile.isDirectory()) continue;
@@ -74,47 +93,7 @@ public class ClientService {
                                 shouldBeSent = true;
                             }
                             if (shouldBeSent) {
-                                if (!cooldownFiles.contains(jarFile)) {
-                                    if (firstLoop) {
-                                        fileInfo.put(jarFile, FileInfo.fileInfo(jarFile));
-                                    } else {
-                                        cooldownFiles.add(jarFile);
-                                        executorService.schedule(() -> {
-                                            try {
-                                                Clip clip = AudioSystem.getClip();
-                                                AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(ResourceUtils.getResource("start.wav"));
-                                                clip.open(audioInputStream);
-                                                clip.start();
-                                            } catch (Exception e) {
-                                                System.out.println("Failed to play start sound.");
-                                                e.printStackTrace();
-                                            }
-
-                                            fileInfo.put(jarFile, FileInfo.fileInfo(jarFile));
-
-                                            System.out.format("Sending '%s' to the server.\n", jarFile.getName());
-                                            try (Socket socket = new Socket(host, port)) {
-                                                DataInputStream dataInputStream = new DataInputStream(socket.getInputStream());
-                                                DataOutputStream dataOutputStream = new DataOutputStream(socket.getOutputStream());
-
-                                                dataOutputStream.writeUTF(password);
-                                                dataOutputStream.writeUTF(jarFile.getName());
-                                                FileInputStream fileInputStream = new FileInputStream(jarFile);
-
-                                                IOUtils.copy(fileInputStream, dataOutputStream);
-
-                                                fileInputStream.close();
-                                                dataInputStream.close();
-                                                dataOutputStream.close();
-                                                socket.close();
-                                                System.out.format("'%s' has been sent to the server successfully.\n", jarFile.getName());
-                                            } catch (Exception e) {
-                                                System.out.format("Failed to send '%s': %s\n", jarFile.getName(), e.getMessage());
-                                            }
-                                            cooldownFiles.remove(jarFile);
-                                        }, 5, TimeUnit.SECONDS);
-                                    }
-                                }
+                                send(jarFile, firstLoop, false, executorService, fileInfo, host, port, password);
                             }
                         }
                     }
@@ -123,7 +102,42 @@ public class ClientService {
             }
         };
 
-        executorService.scheduleAtFixedRate(runnable, 0, 1, TimeUnit.SECONDS);
+        executorService.scheduleAtFixedRate(runnable, 0, 2, TimeUnit.SECONDS);
+    }
+
+    private void send(File jarFile, boolean firstLoop, boolean gradleBuilt, ScheduledExecutorService executorService, Map<File, FileInfo> fileInfo, String host, int port, String password) {
+        if (!cooldownFiles.contains(jarFile)) {
+            if (firstLoop) {
+                fileInfo.put(jarFile, FileInfo.fileInfo(jarFile));
+            } else {
+                cooldownFiles.add(jarFile);
+                executorService.schedule(() -> {
+
+                    fileInfo.put(jarFile, FileInfo.fileInfo(jarFile));
+
+                    System.out.format("Sending '%s' to the server.\n", jarFile.getName());
+                    try (Socket socket = new Socket(host, port)) {
+                        DataInputStream dataInputStream = new DataInputStream(socket.getInputStream());
+                        DataOutputStream dataOutputStream = new DataOutputStream(socket.getOutputStream());
+
+                        dataOutputStream.writeUTF(password);
+                        dataOutputStream.writeUTF(jarFile.getName());
+                        FileInputStream fileInputStream = new FileInputStream(jarFile);
+
+                        IOUtils.copy(fileInputStream, dataOutputStream);
+
+                        fileInputStream.close();
+                        dataInputStream.close();
+                        dataOutputStream.close();
+                        socket.close();
+                        System.out.format("'%s' has been sent to the server successfully.\n", jarFile.getName());
+                    } catch (Exception e) {
+                        System.out.format("Failed to send '%s': %s\n", jarFile.getName(), e.getMessage());
+                    }
+                    cooldownFiles.remove(jarFile);
+                }, gradleBuilt ? 2 : 5, TimeUnit.SECONDS);
+            }
+        }
     }
 
     public static ClientService clientService(String host, int port, String password, String workspacePath) throws Exception {
